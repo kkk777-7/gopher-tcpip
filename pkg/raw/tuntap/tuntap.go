@@ -14,7 +14,7 @@ type Tap struct {
 }
 
 func NewTap(name string) (*Tap, error) {
-	var t *Tap
+	t := &Tap{}
 	os := runtime.GOOS
 	switch os {
 	case "linux":

@@ -13,7 +13,7 @@ func openTapInLinux(name string) (string, *os.File, error) {
 	if len(name) >= unix.IFNAMSIZ {
 		return "", nil, fmt.Errorf("name is too long")
 	}
-	file, err := os.OpenFile(device, os.O_RDWR, 0600)
+	file, err := os.Open(device)
 	if err != nil {
 		return "", nil, err
 	}
@@ -21,6 +21,12 @@ func openTapInLinux(name string) (string, *os.File, error) {
 	if err != nil {
 		return "", nil, err
 	}
+	// NOTE: tun fd won't work epoll, so set NonBlocking
+	// ref: https://github.com/golang/go/issues/38618
+	if err := unix.SetNonblock(int(file.Fd()), true); err != nil {
+		return "", nil, err
+	}
+	file = os.NewFile(file.Fd(), device)
 	flags, err := ioctl.SIOCGIFFLAGS(name)
 	if err != nil {
 		file.Close()
