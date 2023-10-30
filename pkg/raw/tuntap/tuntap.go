@@ -1,14 +1,14 @@
 package tuntap
 
 import (
-	"io"
+	"os"
 	"runtime"
 )
 
 const device = "/dev/net/tun"
 
 type Tap struct {
-	io.ReadWriteCloser
+	file    *os.File
 	name    string
 	address []byte
 }
@@ -26,7 +26,7 @@ func NewTap(name string) (*Tap, error) {
 		if err != nil {
 			return nil, err
 		}
-		t.ReadWriteCloser, t.name, t.address = f, n, addr
+		t.file, t.name, t.address = f, n, addr
 	}
 	return t, nil
 }
@@ -36,4 +36,13 @@ func (t *Tap) Name() string {
 }
 func (t *Tap) Address() []byte {
 	return t.address
+}
+func (t *Tap) Read(data []byte) (int, error) {
+	return t.file.Read(data)
+}
+func (t *Tap) Write(data []byte) (int, error) {
+	return t.file.Write(data)
+}
+func (t *Tap) Close() error {
+	return t.file.Close()
 }

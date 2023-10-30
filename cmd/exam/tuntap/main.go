@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/kkk777-7/gopher-tcpip/pkg/ethernet"
 	"github.com/kkk777-7/gopher-tcpip/pkg/raw/tuntap"
 )
 
@@ -26,7 +27,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("name=%s, addr=%x\n", tap.Name(), tap.Address())
+	fmt.Printf("name=%s, addr=%s\n", tap.Name(), ethernet.ToStringFromByte(tap.Address()))
 	buf := make([]byte, 4096)
 	for {
 		n, err := tap.Read(buf)
