@@ -40,7 +40,7 @@ func (d *Device) Name() string {
 	return d.raw.Name()
 }
 func (d *Device) Address() string {
-	return ToStringFromByte(d.raw.Address())
+	return StringAddr(d.raw.Address())
 }
 func (d *Device) Recv(data []byte) (int, error) {
 	return d.raw.Read(data)

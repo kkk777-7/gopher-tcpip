@@ -27,7 +27,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	fmt.Printf("name=%s, addr=%s\n", tap.Name(), ethernet.ToStringFromByte(tap.Address()))
+	fmt.Printf("name=%s, addr=%s\n", tap.Name(), ethernet.StringAddr(tap.Address()))
 	buf := make([]byte, 4096)
 	for {
 		n, err := tap.Read(buf)

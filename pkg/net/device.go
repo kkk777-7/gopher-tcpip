@@ -53,14 +53,15 @@ func RegisterDevice(d Devicer) (*Device, error) {
 		close(dev.errors)
 	}()
 	devices.Store(d, dev)
-
-	check, _ := devices.Load(d)
-	fmt.Printf("check: %v\n", check)
 	return dev, nil
 }
 
 func (d *Device) Shutdown() {
-	d.Devicer.Close()
+	// TODO : already closed
+	// if err := d.Close(); err != nil {
+	// 	log.Fatal(err)
+	// }
+	close(d.errors)
 	if err := <-d.errors; err != nil {
 		if err != io.EOF {
 			log.Println(err)
