@@ -53,6 +53,9 @@ func main() {
 		log.Fatal(err)
 	}
 	fmt.Printf("[%s] %s\n", dev.Name(), dev.Address())
+	if err := dev.Run(); err != nil {
+		fmt.Printf("%v", err)
+	}
 
 	s := <-sig
 	fmt.Printf("sig: %s\n", s)

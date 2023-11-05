@@ -33,7 +33,14 @@ func RegisterDevice(d Devicer) (*Device, error) {
 		Devicer: d,
 		errors:  make(chan error),
 	}
+	devices.Store(d, dev)
+	return dev, nil
+}
 
+func (d *Device) Run() error {
+	if _, exists := devices.Load(d); exists {
+		return fmt.Errorf("link device '%s' is not found", d.Name())
+	}
 	go func() {
 		var buf = make([]byte, d.HeaderSize()+d.Mtu())
 		for {
@@ -41,26 +48,24 @@ func RegisterDevice(d Devicer) (*Device, error) {
 			if n > 0 {
 				err := d.Handle(buf)
 				if err != nil {
-					dev.errors <- err
+					d.errors <- err
 					break
 				}
 			}
 			if err != nil {
-				dev.errors <- err
+				d.errors <- err
 				break
 			}
 		}
-		close(dev.errors)
+		close(d.errors)
 	}()
-	devices.Store(d, dev)
-	return dev, nil
+	return nil
 }
 
-func (d *Device) Shutdown() {
-	// TODO : already closed
-	// if err := d.Close(); err != nil {
-	// 	log.Fatal(err)
-	// }
+func (d *Device) Shutdown() error {
+	if err := d.Close(); err != nil {
+		return err
+	}
 	close(d.errors)
 	if err := <-d.errors; err != nil {
 		if err != io.EOF {
@@ -68,4 +73,5 @@ func (d *Device) Shutdown() {
 		}
 	}
 	devices.Delete(d.Devicer)
+	return nil
 }
