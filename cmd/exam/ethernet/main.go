@@ -20,6 +20,25 @@ func init() {
 	flag.StringVar(&devName, "name", "", "device name")
 }
 
+func main() {
+	log.Println("start")
+	dev, err := setup()
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("dev[%s] %s\n", dev.Name(), dev.Address())
+	if err := dev.Run(); err != nil {
+		log.Printf("%v", err)
+	}
+
+	s := <-sig
+	log.Printf("sig: %s\n", s)
+	if err = dev.Shutdown(); err != nil {
+		log.Println(err.Error())
+	}
+	log.Println("finish")
+}
+
 func setup() (*net.Device, error) {
 	flag.Parse()
 	if devName == "" {
@@ -39,26 +58,6 @@ func setup() (*net.Device, error) {
 		return nil, err
 	}
 
-	dev, err := net.RegisterDevice(eth)
-	if err != nil {
-		return nil, err
-	}
+	dev := net.RegisterDevice(eth)
 	return dev, nil
-}
-
-func main() {
-	log.Print("start")
-	dev, err := setup()
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Printf("[%s] %s\n", dev.Name(), dev.Address())
-	if err := dev.Run(); err != nil {
-		fmt.Printf("%v", err)
-	}
-
-	s := <-sig
-	fmt.Printf("sig: %s\n", s)
-	dev.Shutdown()
-	log.Print("finish")
 }

@@ -1,8 +1,8 @@
 package net
 
 import (
+	"context"
 	"fmt"
-	"io"
 	"log"
 	"sync"
 )
@@ -21,56 +21,78 @@ type Devicer interface {
 type Device struct {
 	Devicer
 	errors chan error
+	*canceler
+}
+
+type canceler struct {
+	ctx        context.Context
+	cancelFunc context.CancelFunc
+	wg         *sync.WaitGroup
 }
 
 var devices = sync.Map{}
 
-func RegisterDevice(d Devicer) (*Device, error) {
-	if _, exists := devices.Load(d); exists {
-		return nil, fmt.Errorf("link device '%s' is already registered", d.Name())
-	}
+func RegisterDevice(d Devicer) *Device {
+	ctx, cancel := context.WithCancel(context.Background())
+	var wg sync.WaitGroup
+
 	dev := &Device{
 		Devicer: d,
 		errors:  make(chan error),
+		canceler: &canceler{
+			ctx:        ctx,
+			cancelFunc: cancel,
+			wg:         &wg,
+		},
 	}
-	devices.Store(d, dev)
-	return dev, nil
+	devices.LoadOrStore(dev.Name(), dev)
+	return dev
 }
 
 func (d *Device) Run() error {
-	if _, exists := devices.Load(d); exists {
+	if _, exists := devices.Load(d.Name()); !exists {
 		return fmt.Errorf("link device '%s' is not found", d.Name())
 	}
+
 	go func() {
-		var buf = make([]byte, d.HeaderSize()+d.Mtu())
+		buf := make([]byte, d.HeaderSize()+d.Mtu())
 		for {
-			n, err := d.Recv(buf)
-			if n > 0 {
-				err := d.Handle(buf)
+			select {
+			case <-d.ctx.Done():
+				log.Printf("dev[%s] is canceled", d.Name())
+				close(d.errors)
+				d.wg.Done()
+				return
+			default:
+				n, err := d.Recv(buf)
 				if err != nil {
 					d.errors <- err
-					break
+					return
+				}
+				if n > 0 {
+					if err := d.Handle(buf); err != nil {
+						d.errors <- err
+						return
+					}
 				}
 			}
-			if err != nil {
-				d.errors <- err
-				break
-			}
 		}
-		close(d.errors)
 	}()
 	return nil
 }
 
 func (d *Device) Shutdown() error {
+	d.wg.Add(1)
+	d.cancelFunc()
+	d.wg.Wait()
+
 	if err := d.Close(); err != nil {
 		return err
 	}
-	close(d.errors)
-	if err := <-d.errors; err != nil {
-		if err != io.EOF {
-			log.Println(err)
-		}
+	err, ok := <-d.errors
+	if ok {
+		log.Printf("dev[%s] error: %s", d.Name(), err.Error())
+		return err
 	}
 	devices.Delete(d.Devicer)
 	return nil
