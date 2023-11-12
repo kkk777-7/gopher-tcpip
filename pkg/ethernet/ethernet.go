@@ -5,8 +5,8 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
-	"reflect"
 
+	"github.com/kkk777-7/gopher-tcpip/pkg/net"
 	"github.com/kkk777-7/gopher-tcpip/pkg/raw"
 )
 
@@ -58,17 +58,10 @@ func (d *Device) HeaderSize() int {
 	return d.hSize
 }
 
-func (d *Device) Handle(data []byte) error {
+func (d *Device) Handle(data []byte, cb net.DeviceCallbackFn) error {
 	log.Println("packet handling start...")
-	for {
-		ethFrame, err := parse(data)
-		if err != nil {
-			log.Printf("%s error parse: %v", d.raw.Name(), err)
-		}
-		if reflect.DeepEqual(ethFrame.Header.Dst, d.raw.Address()) {
-			log.Println("ok")
-		}
-	}
+	//	cb(d, )
+	return nil
 }
 
 func parse(data []byte) (*Frame, error) {

@@ -13,14 +13,17 @@ type Devicer interface {
 	Recv(data []byte) (int, error)
 	Send(data []byte) (int, error)
 	Close() error
-	Handle(data []byte) error
+	Handle(data []byte, cbFn DeviceCallbackFn) error
 	Mtu() int
 	HeaderSize() int
 }
 
+type DeviceCallbackFn func(device *Device, protocol EthernetType, payload []byte, src, dst HardwareAddress) error
+
 type Device struct {
 	Devicer
-	errors chan error
+	protocols *sync.Map
+	errors    chan error
 	*canceler
 }
 
@@ -35,10 +38,12 @@ var devices = sync.Map{}
 func RegisterDevice(d Devicer) *Device {
 	ctx, cancel := context.WithCancel(context.Background())
 	var wg sync.WaitGroup
+	pMap := sync.Map{}
 
 	dev := &Device{
-		Devicer: d,
-		errors:  make(chan error),
+		Devicer:   d,
+		protocols: &pMap,
+		errors:    make(chan error),
 		canceler: &canceler{
 			ctx:        ctx,
 			cancelFunc: cancel,
@@ -54,6 +59,15 @@ func (d *Device) Run() error {
 		return fmt.Errorf("link device '%s' is not found", d.Name())
 	}
 
+	// Start protocol handler
+	var protocolEntries []*Protocol
+	d.protocols.Range(func(k interface{}, v interface{}) bool {
+		protocolEntry := v.(*Protocol)
+		runProtocolHandler(protocolEntry)
+		protocolEntries = append(protocolEntries, protocolEntry)
+		return true
+	})
+
 	go func() {
 		buf := make([]byte, d.HeaderSize()+d.Mtu())
 		for {
@@ -61,6 +75,9 @@ func (d *Device) Run() error {
 			case <-d.ctx.Done():
 				log.Printf("dev[%s] is canceled", d.Name())
 				close(d.errors)
+				for _, pe := range protocolEntries {
+					close(pe.Queue)
+				}
 				d.wg.Done()
 				return
 			default:
@@ -70,7 +87,7 @@ func (d *Device) Run() error {
 					return
 				}
 				if n > 0 {
-					if err := d.Handle(buf); err != nil {
+					if err := d.Handle(buf[:n], pathThroughProtocol); err != nil {
 						d.errors <- err
 						return
 					}
@@ -79,6 +96,32 @@ func (d *Device) Run() error {
 		}
 	}()
 	return nil
+}
+
+func pathThroughProtocol(device *Device, ethType EthernetType, payload []byte, src, dst HardwareAddress) error {
+	var err error
+	device.protocols.Range(func(k interface{}, v interface{}) bool {
+		var (
+			_type      = k.(EthernetType)
+			protoEntry = v.(Protocol)
+		)
+		if ethType == _type {
+			dev, exists := devices.Load(device.Name())
+			if !exists {
+				err = fmt.Errorf("link device '%s' is not found", dev.(*Device).Name())
+				return false
+			}
+			protoEntry.Queue <- &packet{
+				dev:  dev.(*Device),
+				data: payload,
+				src:  src,
+				dst:  dst,
+			}
+			return false
+		}
+		return true
+	})
+	return err
 }
 
 func (d *Device) Shutdown() error {
