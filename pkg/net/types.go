@@ -6,6 +6,10 @@ const (
 
 type DeviceType string
 
+const (
+	DUMMYDEVICETYPE DeviceType = "dummy"
+)
+
 type Devicer interface {
 	Name() string
 	Address() string
