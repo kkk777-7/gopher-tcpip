@@ -13,8 +13,6 @@ import (
 	"github.com/kkk777-7/gopher-tcpip/pkg/net"
 )
 
-var sig chan os.Signal
-
 func main() {
 	dev := setup()
 	defer dev.Shutdown()

@@ -7,21 +7,6 @@ import (
 	"github.com/kkk777-7/gopher-tcpip/pkg/platform/linux"
 )
 
-type Devicer interface {
-	Name() string
-	Address() string
-	Open() error
-	Close() error
-	Recv(data []byte) (int, error)
-	Send(dType net.DeviceType, data []byte) (int, error)
-	Mtu() int
-	HeaderSize() int
-	AddrSize() int
-	Type() net.DeviceType
-}
-
-type Device struct{}
-
 func (d *Device) Name() string {
 	return DEVICENAME
 }
@@ -60,6 +45,6 @@ func Init() *net.Device {
 }
 
 func Isr(irq int, d interface{}) error {
-	fmt.Printf("dummy_Isr: irq=%d, dev=%s\n", irq, d.(Devicer).Name())
+	fmt.Printf("dummy_Isr: irq=%d, dev=%s\n", irq, d.(net.Devicer).Name())
 	return nil
 }
