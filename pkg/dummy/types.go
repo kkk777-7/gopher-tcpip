@@ -5,4 +5,6 @@ const (
 	MTU        = 1500
 )
 
-type Device struct{}
+type Device struct {
+	name string
+}

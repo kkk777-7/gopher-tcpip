@@ -8,7 +8,7 @@ import (
 )
 
 func (d *Device) Name() string {
-	return DEVICENAME
+	return d.name
 }
 func (d *Device) Address() string {
 	return ""
@@ -54,8 +54,9 @@ func Init() *net.Device {
 		irq:   INTR_LO,
 		queue: make(chan LoEntry, LO_QUEUE_LIMIT),
 	}
-	dev := net.RegisterDevice(lo)
-	linux.RequestIrq(INTR_LO, Isr, linux.INTR_IRQ_SHARED, DEVICENAME, dev)
+	dev, devName := net.RegisterDevice(lo)
+	dev.Priv().(*Device).name = devName
+	linux.RequestIrq(INTR_LO, Isr, linux.INTR_IRQ_SHARED, dev.Name(), dev)
 
 	return dev
 }

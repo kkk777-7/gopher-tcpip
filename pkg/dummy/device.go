@@ -8,7 +8,7 @@ import (
 )
 
 func (d *Device) Name() string {
-	return DEVICENAME
+	return d.name
 }
 func (d *Device) Address() string {
 	return ""
@@ -36,13 +36,14 @@ func (d *Device) Type() net.DeviceType {
 	return net.DUMMYDEVICETYPE
 }
 func (d *Device) Priv() interface{} {
-	return nil
+	return d
 }
 
 func Init() *net.Device {
 	fmt.Println("dummy_Init: initialized")
-	dev := net.RegisterDevice(&Device{})
-	linux.RequestIrq(linux.INTR_DUMMY, Isr, linux.INTR_IRQ_SHARED, DEVICENAME, dev)
+	dev, devName := net.RegisterDevice(&Device{})
+	dev.Priv().(*Device).name = devName
+	linux.RequestIrq(linux.INTR_DUMMY, Isr, linux.INTR_IRQ_SHARED, dev.Name(), dev)
 
 	return dev
 }

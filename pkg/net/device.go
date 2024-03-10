@@ -10,13 +10,20 @@ import (
 
 var devices = sync.Map{}
 
-func RegisterDevice(d Devicer) *Device {
+func RegisterDevice(d Devicer) (*Device, string) {
+	length := 0
+	devices.Range(func(_, _ interface{}) bool {
+		length++
+		return true
+	})
+	devName := fmt.Sprintf("dev%d", length)
+
 	dev := &Device{
 		Devicer: d,
 	}
-	devices.LoadOrStore(dev.Name(), dev)
-	fmt.Printf("net_RegisterDevice: register dev=%s\n", dev.Name())
-	return dev
+	devices.LoadOrStore(devName, dev)
+	fmt.Printf("net_RegisterDevice: register dev=%s\n", devName)
+	return dev, devName
 }
 
 func (d *Device) Run(ctx context.Context, wg *sync.WaitGroup) error {

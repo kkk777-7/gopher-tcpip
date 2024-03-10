@@ -10,6 +10,7 @@ const (
 )
 
 type Device struct {
+	name  string
 	irq   int
 	queue chan LoEntry
 }
