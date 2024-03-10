@@ -8,6 +8,7 @@ type DeviceType string
 
 const (
 	DUMMYDEVICETYPE DeviceType = "dummy"
+	LODEVICETYPE    DeviceType = "lo"
 )
 
 type Devicer interface {
@@ -21,6 +22,7 @@ type Devicer interface {
 	HeaderSize() int
 	AddrSize() int
 	Type() DeviceType
+	Priv() interface{}
 }
 
 type Device struct {

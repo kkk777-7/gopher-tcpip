@@ -35,6 +35,9 @@ func (d *Device) AddrSize() int {
 func (d *Device) Type() net.DeviceType {
 	return net.DUMMYDEVICETYPE
 }
+func (d *Device) Priv() interface{} {
+	return nil
+}
 
 func Init() *net.Device {
 	fmt.Println("dummy_Init: initialized")
