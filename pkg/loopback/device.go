@@ -18,17 +18,17 @@ func (d *Device) Close() error { return nil }
 func (d *Device) Recv(data []byte) (int, error) {
 	return 0, nil
 }
-func (d *Device) Send(dType net.DeviceType, data []byte) (int, error) {
+func (d *Device) Send(pType net.ProtocolType, data []byte) (int, error) {
 	if len(d.queue) >= LO_QUEUE_LIMIT {
 		return 0, fmt.Errorf("lo_Send: queue full")
 	}
 	entry := LoEntry{
-		deviceType: dType,
-		data:       data,
+		protocolType: pType,
+		data:         data,
 	}
 	d.queue <- entry
 
-	fmt.Printf("lo_Send: (queue pushed) dev=%s send: type=%s, len=%d\n", d.Name(), dType, len(data))
+	fmt.Printf("lo_Send: (queue pushed) dev=%s send: type=%s, len=%d\n", d.Name(), pType, len(data))
 	linux.RaiseIrq(INTR_LO)
 	return 0, nil
 }
@@ -69,8 +69,8 @@ func Isr(irq int, d interface{}) error {
 			break
 		}
 		entry := <-dev.queue
-		fmt.Printf("lo_Isr: (queue popped) irq=%d, dev=%s, type=%s, len=%d\n", irq, dev.Name(), entry.deviceType, len(entry.data))
-		netDev.InputHandler(entry.deviceType, entry.data[:], len(entry.data))
+		fmt.Printf("lo_Isr: (queue popped) irq=%d, dev=%s, type=%s, len=%d\n", irq, dev.Name(), entry.protocolType, len(entry.data))
+		netDev.InputHandler(entry.protocolType, entry.data[:], len(entry.data))
 	}
 	return nil
 }

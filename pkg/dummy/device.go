@@ -18,8 +18,8 @@ func (d *Device) Close() error { return nil }
 func (d *Device) Recv(data []byte) (int, error) {
 	return 0, nil
 }
-func (d *Device) Send(dType net.DeviceType, data []byte) (int, error) {
-	fmt.Printf("dummy_Send: dev=%s send: type=%s, len=%d\n", d.Name(), dType, len(data))
+func (d *Device) Send(pType net.ProtocolType, data []byte) (int, error) {
+	fmt.Printf("dummy_Send: dev=%s send: type=%s, len=%d\n", d.Name(), pType, len(data))
 	linux.RaiseIrq(linux.INTR_DUMMY)
 	return 0, nil
 }

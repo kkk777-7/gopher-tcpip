@@ -9,6 +9,7 @@ import (
 )
 
 var devices = sync.Map{}
+var protocols = sync.Map{}
 
 func RegisterDevice(d Devicer) (*Device, string) {
 	length := 0
@@ -45,20 +46,33 @@ func (d *Device) Shutdown() error {
 	return nil
 }
 
-func (d *Device) InputHandler(dType DeviceType, data []byte, len int) error {
-	fmt.Printf("net_InputHandler: dev=%s input: type=%s, len=%d\n", d.Name(), dType, len)
+func (d *Device) InputHandler(pType ProtocolType, data []byte, len int) error {
+	protocols.Range(func(_, value interface{}) bool {
+		protocol := value.(*Protocol)
+		if protocol.protocolType == pType {
+			entry := &ProtocolEntry{
+				device: d,
+				data:   data,
+				len:    len,
+			}
+			protocol.queue <- entry
+			fmt.Printf("net_InputHandler: (queue pushed) dev=%s input: type=%s, len=%d\n", d.Name(), pType, len)
+		}
+		return true
+	})
+	// unsupported protocol type ignored
 	return nil
 }
 
-func (d *Device) Output(dType DeviceType, data []byte, len int) error {
+func (d *Device) Output(pType ProtocolType, data []byte, len int) error {
 	if !isUpDevice(d) {
 		return fmt.Errorf("net_Output: dev=%s not opened", d.Name())
 	}
 	if len > d.Mtu() {
 		return fmt.Errorf("net_Output: too long: dev=%s mtu=%d len=%d", d.Name(), d.Mtu(), len)
 	}
-	fmt.Printf("net_Output: dev=%s output: type=%s, len=%d\n", d.Name(), dType, len)
-	if _, err := d.Send(d.Type(), data[:len]); err != nil {
+	fmt.Printf("net_Output: dev=%s output: type=%s, len=%d\n", d.Name(), pType, len)
+	if _, err := d.Send(pType, data[:len]); err != nil {
 		return fmt.Errorf("net_Output: dev=%s send error: %v", d.Name(), err)
 	}
 	return nil
@@ -90,4 +104,14 @@ func deviceClose(d *Device) error {
 
 func isUpDevice(d *Device) bool {
 	return d.flag&DEVICE_FLAG_UP != 0
+}
+
+func ResisterProtocol(protocolType ProtocolType, handler func(data []byte, len int, dev *Device)) {
+	protocol := &Protocol{
+		protocolType: protocolType,
+		queue:        make(chan *ProtocolEntry),
+		handler:      handler,
+	}
+	protocols.LoadOrStore(protocol.protocolType, protocol)
+	fmt.Printf("net_RegisterProtocol: register protocol=%s\n", protocol.protocolType)
 }

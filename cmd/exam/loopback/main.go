@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/kkk777-7/gopher-tcpip/pkg/ip"
 	"github.com/kkk777-7/gopher-tcpip/pkg/loopback"
 	"github.com/kkk777-7/gopher-tcpip/pkg/net"
 )
@@ -38,7 +39,7 @@ func Output(ctx context.Context, wg *sync.WaitGroup, dev *net.Device) {
 			fmt.Println("output canceled")
 			return
 		default:
-			if err := dev.Output(net.LODEVICETYPE, []byte("hello"), 5); err != nil {
+			if err := dev.Output(net.IPPROTOOLTYPE, []byte("hello"), 5); err != nil {
 				log.Println(err)
 			}
 			time.Sleep(1 * time.Second)
@@ -47,5 +48,6 @@ func Output(ctx context.Context, wg *sync.WaitGroup, dev *net.Device) {
 }
 
 func setup() *net.Device {
+	ip.Init()
 	return loopback.Init()
 }

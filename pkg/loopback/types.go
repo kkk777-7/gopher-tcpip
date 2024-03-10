@@ -16,6 +16,6 @@ type Device struct {
 }
 
 type LoEntry struct {
-	deviceType net.DeviceType
-	data       []byte
+	protocolType net.ProtocolType
+	data         []byte
 }

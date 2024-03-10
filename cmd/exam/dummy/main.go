@@ -38,7 +38,7 @@ func Output(ctx context.Context, wg *sync.WaitGroup, dev *net.Device) {
 			fmt.Println("output canceled")
 			return
 		default:
-			if err := dev.Output(net.DUMMYDEVICETYPE, []byte("hello"), 5); err != nil {
+			if err := dev.Output(net.IPPROTOOLTYPE, []byte("hello"), 5); err != nil {
 				log.Println(err)
 			}
 			time.Sleep(1 * time.Second)
