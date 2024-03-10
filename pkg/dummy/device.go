@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/kkk777-7/gopher-tcpip/pkg/net"
+	"github.com/kkk777-7/gopher-tcpip/pkg/platform/linux"
 )
 
 type Devicer interface {
@@ -33,7 +34,8 @@ func (d *Device) Recv(data []byte) (int, error) {
 	return 0, nil
 }
 func (d *Device) Send(dType net.DeviceType, data []byte) (int, error) {
-	fmt.Printf("%s: dev[%s] send: %s, %d\n", DEVICENAME, d.Name(), dType, len(data))
+	fmt.Printf("dummy_Send: dev=%s send: type=%s, len=%d\n", d.Name(), dType, len(data))
+	linux.RaiseIrq(linux.INTR_DUMMY)
 	return 0, nil
 }
 func (d *Device) Mtu() int {
@@ -50,6 +52,14 @@ func (d *Device) Type() net.DeviceType {
 }
 
 func Init() *net.Device {
-	fmt.Printf("%s: initialized\n", DEVICENAME)
-	return net.RegisterDevice(&Device{})
+	fmt.Println("dummy_Init: initialized")
+	dev := net.RegisterDevice(&Device{})
+	linux.RequestIrq(linux.INTR_DUMMY, Isr, linux.INTR_IRQ_SHARED, DEVICENAME, dev)
+
+	return dev
+}
+
+func Isr(irq int, d interface{}) error {
+	fmt.Printf("dummy_Isr: irq=%d, dev=%s\n", irq, d.(Devicer).Name())
+	return nil
 }

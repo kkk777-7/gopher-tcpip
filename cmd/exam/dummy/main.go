@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
-	"syscall"
+	"sync"
 	"time"
 
 	"github.com/kkk777-7/gopher-tcpip/pkg/dummy"
@@ -17,19 +19,25 @@ func main() {
 	dev := setup()
 	defer dev.Shutdown()
 
-	if err := dev.Run(); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	if err := dev.Run(ctx, &wg); err != nil {
 		log.Fatal(err)
 	}
-	done := make(chan struct{})
-	go func() {
-		s := <-sig
-		log.Printf("sig: %s\n", s)
-		done <- struct{}{}
-	}()
+	go Output(ctx, &wg, dev)
+	wg.Wait()
+}
 
+func Output(ctx context.Context, wg *sync.WaitGroup, dev *net.Device) {
+	defer wg.Done()
 	for {
 		select {
-		case <-done:
+		case <-ctx.Done():
+			fmt.Println("output canceled")
 			return
 		default:
 			if err := dev.Output(net.DUMMYDEVICETYPE, []byte("hello"), 5); err != nil {
@@ -41,9 +49,5 @@ func main() {
 }
 
 func setup() *net.Device {
-	// signal handling
-	sig = make(chan os.Signal)
-	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM)
-
 	return dummy.Init()
 }
