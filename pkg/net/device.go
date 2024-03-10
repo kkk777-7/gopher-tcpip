@@ -1,54 +1,15 @@
 package net
 
 import (
-	"context"
 	"fmt"
-	"log"
 	"sync"
 )
-
-type Devicer interface {
-	Name() string
-	Address() string
-	Recv(data []byte) (int, error)
-	Send(data []byte) (int, error)
-	Close() error
-	Handle(data []byte, cbFn DeviceCallbackFn) error
-	Mtu() int
-	HeaderSize() int
-}
-
-type DeviceCallbackFn func(device *Device, protocol EthernetType, payload []byte, src, dst HardwareAddress) error
-
-type Device struct {
-	Devicer
-	protocols *sync.Map
-	errors    chan error
-	*canceler
-}
-
-type canceler struct {
-	ctx        context.Context
-	cancelFunc context.CancelFunc
-	wg         *sync.WaitGroup
-}
 
 var devices = sync.Map{}
 
 func RegisterDevice(d Devicer) *Device {
-	ctx, cancel := context.WithCancel(context.Background())
-	var wg sync.WaitGroup
-	pMap := sync.Map{}
-
 	dev := &Device{
-		Devicer:   d,
-		protocols: &pMap,
-		errors:    make(chan error),
-		canceler: &canceler{
-			ctx:        ctx,
-			cancelFunc: cancel,
-			wg:         &wg,
-		},
+		Devicer: d,
 	}
 	devices.LoadOrStore(dev.Name(), dev)
 	return dev
@@ -56,87 +17,66 @@ func RegisterDevice(d Devicer) *Device {
 
 func (d *Device) Run() error {
 	if _, exists := devices.Load(d.Name()); !exists {
-		return fmt.Errorf("link device '%s' is not found", d.Name())
+		return fmt.Errorf("link dev[%s] is not found", d.Name())
 	}
-
-	// Start protocol handler
-	var protocolEntries []*Protocol
-	d.protocols.Range(func(k interface{}, v interface{}) bool {
-		protocolEntry := v.(*Protocol)
-		runProtocolHandler(protocolEntry)
-		protocolEntries = append(protocolEntries, protocolEntry)
-		return true
-	})
-
-	go func() {
-		buf := make([]byte, d.HeaderSize()+d.Mtu())
-		for {
-			select {
-			case <-d.ctx.Done():
-				log.Printf("dev[%s] is canceled", d.Name())
-				close(d.errors)
-				for _, pe := range protocolEntries {
-					close(pe.Queue)
-				}
-				d.wg.Done()
-				return
-			default:
-				n, err := d.Recv(buf)
-				if err != nil {
-					d.errors <- err
-					return
-				}
-				if n > 0 {
-					if err := d.Handle(buf[:n], pathThroughProtocol); err != nil {
-						d.errors <- err
-						return
-					}
-				}
-			}
-		}
-	}()
+	if err := deviceOpen(d); err != nil {
+		return err
+	}
 	return nil
-}
-
-func pathThroughProtocol(device *Device, ethType EthernetType, payload []byte, src, dst HardwareAddress) error {
-	var err error
-	device.protocols.Range(func(k interface{}, v interface{}) bool {
-		var (
-			_type      = k.(EthernetType)
-			protoEntry = v.(Protocol)
-		)
-		if ethType == _type {
-			dev, exists := devices.Load(device.Name())
-			if !exists {
-				err = fmt.Errorf("link device '%s' is not found", dev.(*Device).Name())
-				return false
-			}
-			protoEntry.Queue <- &packet{
-				dev:  dev.(*Device),
-				data: payload,
-				src:  src,
-				dst:  dst,
-			}
-			return false
-		}
-		return true
-	})
-	return err
 }
 
 func (d *Device) Shutdown() error {
-	d.wg.Add(1)
-	d.cancelFunc()
-	d.wg.Wait()
+	fmt.Printf("close dev[%s]\n", d.Name())
+	if err := deviceClose(d); err != nil {
+		return err
+	}
+	devices.Delete(d.Name())
+	return nil
+}
 
+func (d *Device) InputHandler(dType DeviceType, data []byte, len int) error {
+	fmt.Printf("dev[%s] input: %s, %d\n", d.Name(), dType, len)
+	return nil
+}
+
+func (d *Device) Output(dType DeviceType, data []byte, len int) error {
+	if !isUpDevice(d) {
+		return fmt.Errorf("dev[%s] not opened", d.Name())
+	}
+	if len > d.Mtu() {
+		return fmt.Errorf("too long: dev[%s] mtu[%d] len[%d]", d.Name(), d.Mtu(), len)
+	}
+	fmt.Printf("dev[%s] output: %s, %d\n", d.Name(), dType, len)
+	if _, err := d.Send(d.Type(), data[:len]); err != nil {
+		return fmt.Errorf("dev[%s] send error: %v", d.Name(), err)
+	}
+	return nil
+}
+
+func deviceOpen(d *Device) error {
+	if isUpDevice(d) {
+		return fmt.Errorf("dev[%s] is already up", d.Name())
+	}
+	if err := d.Open(); err != nil {
+		return err
+	}
+	d.flag |= DEVICE_FLAG_UP
+	fmt.Printf("open dev[%s]\n", d.Name())
+	return nil
+}
+
+func deviceClose(d *Device) error {
+	if !isUpDevice(d) {
+		return fmt.Errorf("dev[%s] is already down", d.Name())
+	}
 	if err := d.Close(); err != nil {
 		return err
 	}
-	err, ok := <-d.errors
-	if ok {
-		log.Printf("dev[%s] error: %s", d.Name(), err.Error())
-		return err
-	}
-	devices.Delete(d.Devicer)
+	d.flag &= ^DEVICE_FLAG_UP
+	fmt.Printf("close dev[%s]\n", d.Name())
 	return nil
+}
+
+func isUpDevice(d *Device) bool {
+	return d.flag&DEVICE_FLAG_UP != 0
 }
