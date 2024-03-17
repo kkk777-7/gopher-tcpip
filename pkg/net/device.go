@@ -3,115 +3,112 @@ package net
 import (
 	"context"
 	"fmt"
+	"log"
 	"sync"
-
-	"github.com/kkk777-7/gopher-tcpip/pkg/platform/linux"
+	"time"
 )
 
 var devices = sync.Map{}
 var protocols = sync.Map{}
 
-func RegisterDevice(d Devicer) (*Device, string) {
-	length := 0
-	devices.Range(func(_, _ interface{}) bool {
-		length++
-		return true
-	})
-	devName := fmt.Sprintf("dev%d", length)
-
-	dev := &Device{
-		Devicer: d,
+func RegisterDevice(ctx context.Context, wg *sync.WaitGroup, device Devicer) (*Device, error) {
+	if _, exists := devices.Load(device.Name()); exists {
+		return nil, fmt.Errorf("device=%s already registered", device.Name())
 	}
-	devices.LoadOrStore(devName, dev)
-	fmt.Printf("net_RegisterDevice: register dev=%s\n", devName)
-	return dev, devName
+	dev := &Device{
+		Devicer: device,
+	}
+
+	// start rx loop
+	go dev.Start(ctx, wg)
+
+	devices.Store(device.Name(), dev)
+	fmt.Printf("net_RegisterDevice: register dev=%s\n", dev.Name())
+	return dev, nil
 }
 
-func (d *Device) Run(ctx context.Context, wg *sync.WaitGroup) error {
-	go linux.RunIrq(ctx, wg)
-	if _, exists := devices.Load(d.Name()); !exists {
-		return fmt.Errorf("net_Run: link dev=%s is not found", d.Name())
+func (dev *Device) Start(ctx context.Context, wg *sync.WaitGroup) {
+	defer wg.Done()
+
+	var terminate bool
+	for !terminate {
+		select {
+		case <-ctx.Done():
+			terminate = true
+		default:
+			var buf = make([]byte, dev.HeaderSize()+dev.Mtu())
+
+			n, err := dev.Read(buf)
+			if n > 0 {
+				if err := dev.RxHandler(buf[:n], rxHandler); err != nil {
+					fmt.Println(err)
+				}
+			}
+			if err != nil {
+				fmt.Println(err)
+			}
+			time.Sleep(1 * time.Second)
+		}
 	}
-	if err := deviceOpen(d); err != nil {
-		return err
-	}
+}
+
+func rxHandler(device Devicer, protocolType ProtocolType, payload []byte) error {
+	// unsupported protocol type ignored
+	protocols.Range(func(key, value interface{}) bool {
+		pType := key.(ProtocolType)
+		protocol := value.(*Protocol)
+		if pType == protocolType {
+			dev, _ := devices.Load(device)
+			protocol.rxQueue <- &ProtocolEntry{
+				device: dev.(*Device),
+				data:   payload,
+			}
+			fmt.Printf("net_rxHandler: (queue pushed) dev=%s input: type=%x, len=%d\n", dev.(*Device).Name(), pType, len(payload))
+			return false
+		}
+		return true
+	})
 	return nil
 }
 
 func (d *Device) Shutdown() error {
-	if err := deviceClose(d); err != nil {
+	if err := d.Close(); err != nil {
 		return err
 	}
+	fmt.Printf("net_Shutdown: close dev=%s\n", d.Name())
 	devices.Delete(d.Name())
 	return nil
 }
 
-func (d *Device) InputHandler(pType ProtocolType, data []byte, len int) error {
-	protocols.Range(func(_, value interface{}) bool {
-		protocol := value.(*Protocol)
-		if protocol.protocolType == pType {
-			entry := &ProtocolEntry{
-				device: d,
-				data:   data,
-				len:    len,
-			}
-			protocol.queue <- entry
-			fmt.Printf("net_InputHandler: (queue pushed) dev=%s input: type=%s, len=%d\n", d.Name(), pType, len)
-		}
-		return true
-	})
-	// unsupported protocol type ignored
-	return nil
-}
-
-func (d *Device) Output(pType ProtocolType, data []byte, len int) error {
-	if !isUpDevice(d) {
-		return fmt.Errorf("net_Output: dev=%s not opened", d.Name())
+func ResisterProtocol(ctx context.Context, wg *sync.WaitGroup, Type ProtocolType, rxHandler ProtocolRxHandler) {
+	if _, ok := protocols.Load(Type); ok {
+		log.Printf("net_RegisterProtocol: protocol=%x already registered\n", Type)
+		return
 	}
-	if len > d.Mtu() {
-		return fmt.Errorf("net_Output: too long: dev=%s mtu=%d len=%d", d.Name(), d.Mtu(), len)
-	}
-	fmt.Printf("net_Output: dev=%s output: type=%s, len=%d\n", d.Name(), pType, len)
-	if _, err := d.Send(pType, data[:len]); err != nil {
-		return fmt.Errorf("net_Output: dev=%s send error: %v", d.Name(), err)
-	}
-	return nil
-}
-
-func deviceOpen(d *Device) error {
-	if isUpDevice(d) {
-		return fmt.Errorf("net_deviceOpen: dev=%s is already up", d.Name())
-	}
-	if err := d.Open(); err != nil {
-		return err
-	}
-	d.flag |= DEVICE_FLAG_UP
-	fmt.Printf("net_deviceOpen: open dev=%s\n", d.Name())
-	return nil
-}
-
-func deviceClose(d *Device) error {
-	if !isUpDevice(d) {
-		return fmt.Errorf("net_deviceClose: dev=%s is already down", d.Name())
-	}
-	if err := d.Close(); err != nil {
-		return err
-	}
-	d.flag &= ^DEVICE_FLAG_UP
-	fmt.Printf("net_deviceClose: close dev=%s\n", d.Name())
-	return nil
-}
-
-func isUpDevice(d *Device) bool {
-	return d.flag&DEVICE_FLAG_UP != 0
-}
-
-func ResisterProtocol(protocolType ProtocolType, handler func(data []byte, len int, dev *Device)) {
 	protocol := &Protocol{
-		protocolType: protocolType,
-		queue:        make(chan *ProtocolEntry),
-		handler:      handler,
+		Type:      Type,
+		rxQueue:   make(chan *ProtocolEntry),
+		rxHandler: rxHandler,
 	}
-	protocols.LoadOrStore(protocol.protocolType, protocol)
-	fmt.Printf("net_RegisterProtocol: register protocol=%s\n", protocol.protocolType)
+	// start rx loop
+	go func() {
+		defer wg.Done()
+
+		var terminate bool
+		for !terminate {
+			select {
+			case <-ctx.Done():
+				terminate = true
+			default:
+				for entry := range protocol.rxQueue {
+					if err := protocol.rxHandler(entry.device, entry.data); err != nil {
+						log.Println(err)
+					}
+				}
+			}
+		}
+	}()
+
+	protocols.Store(protocol.Type, protocol)
+	fmt.Printf("net_RegisterProtocol: register protocol=%x\n", protocol.Type)
 }

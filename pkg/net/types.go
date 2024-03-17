@@ -4,46 +4,46 @@ const (
 	DEVICE_FLAG_UP = 0x0001
 )
 
-type DeviceType string
+type DeviceType uint16
 
 const (
-	DUMMYDEVICETYPE DeviceType = "dummy"
-	LODEVICETYPE    DeviceType = "lo"
+	DUMMYDEVICETYPE DeviceType = 0x0000
+	LODEVICETYPE    DeviceType = 0x0001
 )
 
-type ProtocolType string
+type ProtocolType uint16
 
 const (
-	IPPROTOOLTYPE ProtocolType = "ip"
+	IPPROTOOLTYPE ProtocolType = 0x0800
 )
+
+type DeviceCallbackHandler func(device Devicer, protocol ProtocolType, payload []byte) error
 
 type Devicer interface {
+	Type() DeviceType
 	Name() string
 	Address() string
-	Open() error
 	Close() error
-	Recv(data []byte) (int, error)
-	Send(pType ProtocolType, data []byte) (int, error)
+	Read(data []byte) (int, error)
+	RxHandler(frame []byte, cb DeviceCallbackHandler) error
+	Tx(proto ProtocolType, data []byte) error
 	Mtu() int
 	HeaderSize() int
-	AddrSize() int
-	Type() DeviceType
-	Priv() interface{}
 }
 
 type Device struct {
 	Devicer
-	flag int
 }
 
+type ProtocolRxHandler func(dev *Device, data []byte) error
+
 type Protocol struct {
-	protocolType ProtocolType
-	queue        chan *ProtocolEntry
-	handler      func(data []byte, len int, dev *Device)
+	Type      ProtocolType
+	rxQueue   chan *ProtocolEntry
+	rxHandler ProtocolRxHandler
 }
 
 type ProtocolEntry struct {
 	device *Device
-	len    int
 	data   []byte
 }

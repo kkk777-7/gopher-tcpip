@@ -1,76 +1,71 @@
 package loopback
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
+	"io"
 
 	"github.com/kkk777-7/gopher-tcpip/pkg/net"
-	"github.com/kkk777-7/gopher-tcpip/pkg/platform/linux"
 )
+
+func NewDevice() *Device {
+	return &Device{
+		name:  DEVICENAME,
+		queue: make(chan []byte),
+	}
+}
+
+func (d *Device) Type() net.DeviceType {
+	return net.LODEVICETYPE
+}
 
 func (d *Device) Name() string {
 	return d.name
 }
-func (d *Device) Address() string {
-	return ""
-}
-func (d *Device) Open() error  { return nil }
-func (d *Device) Close() error { return nil }
-func (d *Device) Recv(data []byte) (int, error) {
-	return 0, nil
-}
-func (d *Device) Send(pType net.ProtocolType, data []byte) (int, error) {
-	if len(d.queue) >= LO_QUEUE_LIMIT {
-		return 0, fmt.Errorf("lo_Send: queue full")
-	}
-	entry := LoEntry{
-		protocolType: pType,
-		data:         data,
-	}
-	d.queue <- entry
 
-	fmt.Printf("lo_Send: (queue pushed) dev=%s send: type=%s, len=%d\n", d.Name(), pType, len(data))
-	linux.RaiseIrq(INTR_LO)
-	return 0, nil
+func (d *Device) Address() string {
+	return "10.0.0.1"
 }
+
+func (d *Device) Close() error {
+	close(d.queue)
+	return nil
+}
+
+func (d *Device) Read(buf []byte) (int, error) {
+	var err error
+	data, ok := <-d.queue
+	if !ok {
+		err = io.EOF
+	}
+	return copy(buf, data), err
+}
+
+func (d *Device) RxHandler(frame []byte, callback net.DeviceCallbackHandler) error {
+	fmt.Printf("loopback_RxHandler: dev=%s, len=%d\n", d.Name(), len(frame))
+	hdr := header{}
+	buf := bytes.NewBuffer(frame)
+	if err := binary.Read(buf, binary.BigEndian, &hdr); err != nil {
+		return err
+	}
+	callback(d, net.IPPROTOOLTYPE, buf.Bytes())
+	return nil
+}
+
+func (d *Device) Tx(Type net.ProtocolType, data []byte) error {
+	fmt.Printf("loopback_Tx: dev=%s, len=%d\n", d.Name(), len(data))
+	buf := make([]byte, 2+len(data))
+	binary.BigEndian.PutUint16(buf[0:2], uint16(Type))
+	copy(buf[2:], data)
+	d.queue <- buf
+	return nil
+}
+
 func (d *Device) Mtu() int {
 	return MTU
 }
+
 func (d *Device) HeaderSize() int {
 	return 0
-}
-func (d *Device) AddrSize() int {
-	return 0
-}
-func (d *Device) Type() net.DeviceType {
-	return net.LODEVICETYPE
-}
-func (d *Device) Priv() interface{} {
-	return d
-}
-
-func Init() *net.Device {
-	fmt.Println("lo_Init: initialized")
-	lo := &Device{
-		irq:   INTR_LO,
-		queue: make(chan LoEntry, LO_QUEUE_LIMIT),
-	}
-	dev, devName := net.RegisterDevice(lo)
-	dev.Priv().(*Device).name = devName
-	linux.RequestIrq(INTR_LO, Isr, linux.INTR_IRQ_SHARED, dev.Name(), dev)
-
-	return dev
-}
-
-func Isr(irq int, d interface{}) error {
-	netDev := d.(*net.Device)
-	dev := netDev.Priv().(*Device)
-	for {
-		if len(dev.queue) == 0 {
-			break
-		}
-		entry := <-dev.queue
-		fmt.Printf("lo_Isr: (queue popped) irq=%d, dev=%s, type=%s, len=%d\n", irq, dev.Name(), entry.protocolType, len(entry.data))
-		netDev.InputHandler(entry.protocolType, entry.data[:], len(entry.data))
-	}
-	return nil
 }

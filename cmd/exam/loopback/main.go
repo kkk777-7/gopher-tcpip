@@ -9,24 +9,26 @@ import (
 	"sync"
 	"time"
 
-	"github.com/kkk777-7/gopher-tcpip/pkg/ip"
 	"github.com/kkk777-7/gopher-tcpip/pkg/loopback"
 	"github.com/kkk777-7/gopher-tcpip/pkg/net"
 )
 
 func main() {
-	dev := setup()
-	defer dev.Shutdown()
+	lo := setup()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
-
 	var wg sync.WaitGroup
 	wg.Add(2)
 
-	if err := dev.Run(ctx, &wg); err != nil {
+	dev, err := net.RegisterDevice(ctx, &wg, lo)
+	if err != nil {
 		log.Fatal(err)
 	}
+	defer dev.Shutdown()
+
+	fmt.Printf("[%s] %s\n", dev.Name(), dev.Address())
+
 	go Output(ctx, &wg, dev)
 	wg.Wait()
 }
@@ -39,7 +41,7 @@ func Output(ctx context.Context, wg *sync.WaitGroup, dev *net.Device) {
 			fmt.Println("output canceled")
 			return
 		default:
-			if err := dev.Output(net.IPPROTOOLTYPE, []byte("hello"), 5); err != nil {
+			if err := dev.Tx(net.IPPROTOOLTYPE, []byte("hello")); err != nil {
 				log.Println(err)
 			}
 			time.Sleep(1 * time.Second)
@@ -47,7 +49,6 @@ func Output(ctx context.Context, wg *sync.WaitGroup, dev *net.Device) {
 	}
 }
 
-func setup() *net.Device {
-	ip.Init()
-	return loopback.Init()
+func setup() *loopback.Device {
+	return loopback.NewDevice()
 }

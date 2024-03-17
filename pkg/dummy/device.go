@@ -4,51 +4,46 @@ import (
 	"fmt"
 
 	"github.com/kkk777-7/gopher-tcpip/pkg/net"
-	"github.com/kkk777-7/gopher-tcpip/pkg/platform/linux"
 )
+
+func NewDevice() *Device {
+	return &Device{
+		name: DEVICENAME,
+	}
+}
+
+func (d *Device) Type() net.DeviceType {
+	return net.DUMMYDEVICETYPE
+}
 
 func (d *Device) Name() string {
 	return d.name
 }
+
 func (d *Device) Address() string {
-	return ""
+	return "10.0.0.1"
 }
-func (d *Device) Open() error  { return nil }
+
 func (d *Device) Close() error { return nil }
-func (d *Device) Recv(data []byte) (int, error) {
+func (d *Device) Read(data []byte) (int, error) {
 	return 0, nil
 }
-func (d *Device) Send(pType net.ProtocolType, data []byte) (int, error) {
-	fmt.Printf("dummy_Send: dev=%s send: type=%s, len=%d\n", d.Name(), pType, len(data))
-	linux.RaiseIrq(linux.INTR_DUMMY)
-	return 0, nil
+
+func (d *Device) RxHandler(frame []byte, cb net.DeviceCallbackHandler) error {
+	fmt.Printf("dummy_RxHandler: dev=%s, len=%d\n", d.Name(), len(frame))
+	cb(d, net.IPPROTOOLTYPE, frame)
+	return nil
 }
+
+func (d *Device) Tx(proto net.ProtocolType, data []byte) error {
+	fmt.Printf("dummy_Tx: dev=%s type=%x, len=%d\n", d.Name(), proto, len(data))
+	return nil
+}
+
 func (d *Device) Mtu() int {
 	return MTU
 }
+
 func (d *Device) HeaderSize() int {
 	return 0
-}
-func (d *Device) AddrSize() int {
-	return 0
-}
-func (d *Device) Type() net.DeviceType {
-	return net.DUMMYDEVICETYPE
-}
-func (d *Device) Priv() interface{} {
-	return d
-}
-
-func Init() *net.Device {
-	fmt.Println("dummy_Init: initialized")
-	dev, devName := net.RegisterDevice(&Device{})
-	dev.Priv().(*Device).name = devName
-	linux.RequestIrq(linux.INTR_DUMMY, Isr, linux.INTR_IRQ_SHARED, dev.Name(), dev)
-
-	return dev
-}
-
-func Isr(irq int, d interface{}) error {
-	fmt.Printf("dummy_Isr: irq=%d, dev=%s\n", irq, d.(net.Devicer).Name())
-	return nil
 }

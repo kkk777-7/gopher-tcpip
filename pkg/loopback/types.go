@@ -3,19 +3,17 @@ package loopback
 import "github.com/kkk777-7/gopher-tcpip/pkg/net"
 
 const (
-	DEVICENAME     = "lo"
-	MTU            = 65535
-	LO_QUEUE_LIMIT = 16
-	INTR_LO        = 0x0002
+	DEVICENAME = "lo"
+	MTU        = 65535
 )
 
 type Device struct {
 	name  string
-	irq   int
-	queue chan LoEntry
+	queue chan []byte
 }
 
-type LoEntry struct {
-	protocolType net.ProtocolType
-	data         []byte
+type header struct {
+	Type net.ProtocolType
 }
+
+// type address struct{}
